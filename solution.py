@@ -54,6 +54,7 @@ use_default_offset=True, preserve_order=True)。返回的 action 维度必须等
 """
 
 import os
+import sys
 import torch
 import math
 
@@ -61,6 +62,15 @@ import math
 MODE = os.environ.get("ATEC_SOLUTION_MODE", "rl")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# 兼容两种加载方式：
+#   1) 提交/server.py：cwd=solution 目录，本文件作为顶层模块 `solution` 导入，
+#      `import solution_act` / `import act.*` 直接可用；
+#   2) 本地评估/play_atec_task.py：cwd=仓库根，本文件作为 `demo.solution` 子模块导入，
+#      此时 demo/ 不在 sys.path 上，顶层名 `solution_act` / `act` 无法解析。
+# 把本文件所在目录(demo/)注入 sys.path，使 ACT delegate 与 act/ 子包在两种方式下都能 import。
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 
 class AlgSolution:
@@ -111,7 +121,7 @@ class AlgSolution:
             self._ENV_TO_TRAIN_LEG, device=self.device, dtype=torch.float32
         ).view(1, -1)
 
-        vx = float(os.environ.get("ATEC_VEL_X", "1.0"))
+        vx = float(os.environ.get("ATEC_VEL_X", "1.5"))
         vy = float(os.environ.get("ATEC_VEL_Y", "0.0"))
         vyaw = float(os.environ.get("ATEC_VEL_YAW", "0.0"))
         self._vel_cmd = torch.tensor(
@@ -150,8 +160,12 @@ class AlgSolution:
             proprio = proprio.to(self.device).float()
             action_dim = (int(proprio.shape[-1]) - 12) // 3
             if action_dim < self._LEG_ACTION_DIM:
-                # proprio 维度异常（不足以容纳 12 条腿）：直接安全回退。
-                return {"action": self._zero_action(proprio, max(action_dim, self._DEFAULT_ACTION_DIM)),
+                # 不足以容纳 12 条腿：可能是非 B2 类机器人（如 Piper action_dim=8）。
+                # 此时 locomotion policy 不适用，安全回退到 action_dim 维零动作；
+                # 仅当 proprio 解析出非正维度才用 _DEFAULT_ACTION_DIM 兜底，
+                # 绝不再硬编码 20 维（否则会与 Piper 期望的 8 维冲突而崩）。
+                safe_dim = action_dim if action_dim > 0 else self._DEFAULT_ACTION_DIM
+                return {"action": self._zero_action(proprio, safe_dim),
                         "giveup": False}
 
             if self.policy is None:
