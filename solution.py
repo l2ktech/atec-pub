@@ -332,31 +332,22 @@ class AlgSolution:
                 vx = 1.5
                 vy = 0.0
                 vyaw = 0.0
-        elif step < 40:
-            # Phase 0: 后退+侧移同时进行
-            # 需要退到箱子后面 (x < -3.7) 并开始靠近 y=1.6
+        elif step < 50:
+            # Phase 0: 后退+侧移（50步=1.0s, 目标: x后退~0.8m, y右移~0.8m）
             vx = -0.8
-            vy = 0.8   # 同时大幅侧移
-            vyaw = 0.0
-        elif est_y < 1.4:
-            # Phase 1: 继续侧移到精确对齐箱子中心 y=1.6
-            # 保持在箱子后方
-            vx = -0.3 if est_x > BOX_X - 0.7 else 0.0
             vy = 0.8
             vyaw = 0.0
-        elif est_y > 2.2:
-            # 太偏了，修正回来
-            vx = 0.0
-            vy = -0.5
+        elif step < 150:
+            # Phase 1: 继续侧移到箱子y位置（100步=2.0s, vy=0.6→额外1.2m, 总y≈2.0m）
+            # 同时缓慢后退确保在箱子后方
+            vx = -0.2
+            vy = 0.6
             vyaw = 0.0
-        else:
-            # Phase 2: 已对齐 y ∈ [1.4, 2.2]，前进推箱子
-            # 用中等速度推，太快会跳过箱子或失稳
-            # 箱子需要推 1.6m (从 x=-3 到 x=-1.4)
-            vx = 1.0   # 中速推，给箱子施加稳定持续的力
-            # P 控制器保持 y 对齐箱子中心
-            y_err = BOX_Y - est_y
-            vy = max(-0.3, min(0.3, y_err * 2.0))  # 增大增益保持对齐
+        elif step < 500:
+            # Phase 2: 全速前进推箱子（350步=7.0s, vx=1.2→前进8.4m）
+            # 从x≈-4.5推到x≈3.9, 箱子从x=-3被推过x=-0.7(+14分)和x=-1.4(+2分)
+            vx = 1.2
+            vy = 0.0
             vyaw = 0.0
 
         self._vel_cmd = torch.tensor(
